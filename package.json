@@ -1,0 +1,14 @@
+{
+  "name": "aether-version",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Version gate endpoint for the Aether Lua hub.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

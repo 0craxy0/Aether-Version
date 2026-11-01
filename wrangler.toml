@@ -1,0 +1,7 @@
+name = "aether-version"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# Deploy output is https://aether-version.<your-subdomain>.workers.dev
+# Uncomment to serve it on your own hostname instead:
+# routes = [{ pattern = "version.example.com", custom_domain = true }]
