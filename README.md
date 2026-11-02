@@ -1,23 +1,65 @@
 # Aether-Version
 
-The update-check endpoint for [Aether](https://github.com/0craxy0/Aether). A device POSTs
-the build it is running; this Worker reads `version.json` from the Aether repo, compares
-the two, and answers with the decision.
+The update-check endpoint for [Aether](https://github.com/0craxy0/Aether). A device
+POSTs the build it is running; this Worker compares it with `version.json` in the
+Aether repo and answers.
 
-The device never decides whether an update exists. It reports a rev and takes orders.
-That is deliberate: it means a bad build can be recalled without editing anything a
-client has already cached.
+The device never decides whether an update exists. It reports a rev and takes orders,
+so a bad build can be recalled without editing anything a client already cached.
+
+## Why there is a guard at all
+
+One hostile caller could otherwise burn the free tier's 100,000 daily invocations and
+take every user offline. The obvious defence — a limit per `device` — does not work:
+the device string is attacker-chosen, and rotating it costs nothing.
+
+So every limit keys on something the caller **cannot** choose:
+
+| Layer | Keys on | Beaten by |
+|---|---|---|
+| Shape check | HTTP method, body size | nothing (free) |
+| Per-IP counters | `CF-Connecting-IP` | a botnet with many IPs |
+| Global breaker | one shared Durable Object | nothing (bounds total spend) |
+| HMAC token | IP + issue time + nonce | stealing the secret |
+| Proof of work | IP-hour-bound puzzle, per new identity | real CPU per IP |
+
+The order matters. An attacker costs one invocation the instant they arrive, so the
+checks run cheapest-first and reject before any crypto or storage work happens.
+
+### The token
+
+The Worker mints an HMAC over `(sha256(ip)[:24], issuedAt, nonce)`. It is not secret —
+it is unforgeable. A token lifted from another user is useless from your address, so a
+botnet has to obtain one per IP, and obtaining one costs a puzzle.
+
+Tokens live 7 days. A client that holds one never solves another puzzle: a real user
+pays the cost once, ever.
+
+### Proof of work
+
+16 bits ≈ 65k hashes, about 0.8 s even in a slow single-threaded solver. A challenge is
+bound to the IP and the current hour, is deterministic (so a retry resumes rather than
+restarting), and is issued *before* any real work is done. Raise `CHALLENGE_BITS` if
+abuse appears — clients read the difficulty from the challenge, so no client change is
+needed.
+
+This does not defeat a large botnet. Nothing at this layer does. It makes each fabricated
+identity cost real time, which is the only thing that raises an attacker's price without
+raising yours.
 
 ## Deploy
 
 ```bash
 npm install
 npx wrangler login
+npx wrangler secret put HMAC_SECRET     # any long random string
 npm run deploy
 ```
 
-Wrangler prints the URL, normally `https://aether-version.<subdomain>.workers.dev`.
-Put that in `U.api` in Aether's `tail/updater.lua`.
+Then put the printed `https://aether-version.<subdomain>.workers.dev` into `U.api` in
+Aether's `tail/updater.lua`.
+
+`npm test` runs 47 assertions across the token, the puzzle and the full request flow.
 
 ## Request
 
@@ -28,85 +70,45 @@ Content-Type: application/json
 { "rev": 9, "build": "2026-11-01.9", "device": "123456789" }
 ```
 
-- `rev` — integer, the `REV` the loader was built with. Source of truth.
-- `build` — the date string, used only for logging. Never compared.
-- `device` — optional, any stable per-user string. Hashed to place the device in a
-  rollout wave. `UserId` is enough; nothing identifies the user server-side.
-
-## Response
-
-Nothing to do:
+First call from a new IP returns `401` with a puzzle:
 
 ```json
-{ "update": false, "rev": 10, "build": "2026-11-01.10" }
+{ "error": "challenge required", "seed": "203.0.113.7|495123", "bits": 16 }
 ```
 
-Update available:
+Solve it — find `nonce` such that `sha256("<seed>:<nonce>")` has 16 leading zero bits —
+and send it back with `seed`, `nonce` and `bits`. The answer includes a `token`; store it
+and send it on every later request instead of the puzzle.
+
+Response:
 
 ```json
 {
+  "token": "eyJpcCI6...",
   "update": true,
   "rev": 10,
-  "build": "2026-11-01.10",
-  "notes": "Aim step, shadow and corner fixes.",
+  "build": "2026-11-02.1",
+  "notes": "…",
   "loader": "https://raw.githubusercontent.com/0craxy0/Aether/main/main.lua",
   "forced": false,
   "cooldown": 300
 }
 ```
 
-`forced: true` means the running build is below `minRev`. The client should still ask,
-but must not accept "later" as an answer.
-
-## version.json
-
-Read from `0craxy0/Aether@main/version.json` on every request (edge-cached for 60s):
-
-```json
-{
-  "rev": 10,
-  "build": "2026-11-01.10",
-  "notes": "Aim step, shadow and corner fixes.",
-  "loader": "main.lua",
-  "minRev": 0,
-  "rollout": 100
-}
-```
-
 | Field | Meaning |
 |---|---|
 | `rev` | Monotonic integer. The only field that decides anything. |
-| `build` | Human-readable date stamp, shown in the prompt. |
-| `notes` | One line of changelog, max 300 chars in the response. |
-| `minRev` | Revs below this are force-updated. Use to unstick a broken push. |
+| `minRev` | Revs below this are force-updated, for pulling a broken push. |
 | `rollout` | Percent of devices offered the update. `100` = everyone. |
 
-Bump `REV` in `main.lua` and `rev` in `version.json` **together**. If they drift,
-the loader warns that `version.json` is behind and nobody gets offered the next build.
-
-## Cost
-
-The free tier is 100,000 requests/day, and the client pings every 15 seconds:
-
-| Poll interval | Requests/device/day | Devices on free tier |
-|---|---|---|
-| 5 s | 17,280 | 5 |
-| 15 s | 5,760 | 17 |
-| 30 s | 2,880 | 34 |
-| 60 s | 1,440 | 69 |
-
-If that ceiling matters, poll `version.json` directly on the shown interval — it is
-CDN-served and unmetered — and only POST here when the rev changes, or once per
-session. Same behaviour, roughly one request per device per session.
-
-`EDGE_TTL` in `src/index.js` is the other half: it caps how often GitHub is actually
-read, regardless of how many devices are pinging.
+Bump `REV` in `main.lua` and `rev` in `version.json` **together**, or nobody is offered
+the next build.
 
 ## Notes
 
-- `cache-control: no-store` on every response. A cached "you're up to date" is worse
-  than no endpoint at all.
-- The Worker never returns code, only a descriptor. The client saves its own config,
-  tears down its own UI, and re-downloads its own loader. Handing back a script to
-  execute would mean executing whatever the endpoint served, with no error handling
-  and no way to keep the config when it fails halfway.
+- `cache-control: no-store` everywhere. A cached "you're up to date" is worse than no
+  endpoint.
+- The limiter **fails open**. An update check that stops working strands every user on an
+  old build, which is worse than briefly losing the guard.
+- The Worker returns a descriptor, never code. The client saves its own config, tears down
+  its own UI and re-downloads its own loader.

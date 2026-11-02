@@ -3,5 +3,18 @@ main = "src/index.js"
 compatibility_date = "2026-11-01"
 
 # Deploy output is https://aether-version.<your-subdomain>.workers.dev
-# Uncomment to serve it on your own hostname instead:
+# Uncomment to serve on your own hostname instead:
 # routes = [{ pattern = "version.example.com", custom_domain = true }]
+
+# Exact cross-location counters: one instance per IP, plus one `global` instance.
+# SQLite-backed, so this works on the Workers Free plan.
+[[durable_objects.bindings]]
+name = "LIMITER"
+class_name = "Limiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Limiter"]
+
+# HMAC_SECRET is a secret, not a var:
+#   npx wrangler secret put HMAC_SECRET

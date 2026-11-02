@@ -1,9 +1,11 @@
 {
   "name": "aether-version",
   "private": true,
-  "version": "1.0.0",
-  "description": "Version gate endpoint for the Aether Lua hub.",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Rate-limited, spoof-resistant version gate for the Aether Lua hub.",
   "scripts": {
+    "test": "node test/token.test.mjs && node test/pow.test.mjs && node test/worker.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
