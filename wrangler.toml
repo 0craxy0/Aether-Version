@@ -20,14 +20,15 @@ new_sqlite_classes = ["Limiter"]
 #   npx wrangler secret put HMAC_SECRET
 #
 # Announcements (GET /announcements, POST /announce) need a storage binding and a
-# publish token. Either backend works:
+# publish token. The KV binding is declared here as well as in the dashboard:
+# a dashboard-only binding is wiped by the next deploy, because a build runs
+# `wrangler deploy` against this file and this file is the source of truth.
+[[kv_namespaces]]
+binding = "ANNOUNCEMENTS"
+id = "9dc8d4868ef1424c8d319c088936ab72"
 #
-#   KV, no GitHub write access needed, publish is one write:
-#     npx wrangler kv namespace create ANNOUNCEMENTS
-#     then uncomment and paste the id:
-#   [[kv_namespaces]]
-#   binding = "ANNOUNCEMENTS"
-#   id = "<namespace id>"
+# The GitHub backend is kept as an alternative, no new namespace, but every
+# publish is a commit:
 #
 #   GitHub, no new namespace, every publish is a commit:
 #     npx wrangler secret put GITHUB_TOKEN     # contents:write on the Aether repo
