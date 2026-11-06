@@ -15,6 +15,7 @@ import { LIMITS, clientIp } from "./limits.js";
 import { mintToken, verifyToken, sha256Hex } from "./token.js";
 import { makeChallenge, checkWork } from "./pow.js";
 import { handleAnnouncements, handlePublish } from "./announce.js";
+import { handleRelease, handleReleasePublish, readRelease } from "./release.js";
 
 const REPO = "0craxy0/Aether";
 const BRANCH = "main";
@@ -39,6 +40,11 @@ export default {
 		if (path === "/announce") {
 			if (request.method !== "POST") return json({ error: "POST required" }, 405);
 			return handlePublish(request, env);
+		}
+		if (path === "/release") {
+			if (request.method === "GET") return handleRelease(env);
+			if (request.method === "POST") return handleReleasePublish(request, env);
+			return json({ error: "GET or POST required" }, 405);
 		}
 
 		if (request.method !== "POST") return json({ error: "POST required" }, 405);
@@ -103,12 +109,20 @@ export default {
 			return json({ token, update: false, rev: latest, build: ver.build, wave: hash(device) % 100 });
 		}
 
+		// The wording of the prompt can come from the owner's panel; the rev never
+		// can. A rev is a promise that fetching main.lua returns that build, and only
+		// a commit can make that true - so a published record decorates the prompt
+		// here, and is ignored unless it is tagged with the rev actually being served.
+		const release = await readRelease(env);
+		const decorate = Boolean(release && (!release.rev || release.rev === latest));
+
 		return json({
 			token,
 			update: true,
 			rev: latest,
 			build: ver.build,
-			notes: String(ver.notes ?? "").slice(0, 300),
+			title: decorate ? release.title : "Update available",
+			notes: decorate ? release.notes : String(ver.notes ?? "").slice(0, 300),
 			loader: `https://raw.githubusercontent.com/${REPO}/${BRANCH}/main.lua`,
 			forced,
 			cooldown: 300,
