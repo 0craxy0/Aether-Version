@@ -52,14 +52,18 @@ raising yours.
 ```bash
 npm install
 npx wrangler login
-npx wrangler secret put HMAC_SECRET     # any long random string
 
-# announcements, optional but recommended - see below
-npx wrangler kv namespace create ANNOUNCEMENTS   # paste the id into wrangler.toml
-npx wrangler secret put PUBLISH_TOKEN            # the bearer token you publish with
+npm run setup:publish    # creates the KV namespace, writes the binding,
+                         # mints PUBLISH_TOKEN and stores it in .aether-publish-token
+npx wrangler secret put HMAC_SECRET     # any long random string
 
 npm run deploy
 ```
+
+`setup:publish` is idempotent — running it again reuses the namespace and the
+existing token (`--rotate` mints a new one, `--dry-run` changes nothing). If you
+would rather publish by commit, skip it and set `GITHUB_TOKEN` instead; the
+endpoint picks whichever binding exists.
 
 Then put the printed `https://aether-version.<subdomain>.workers.dev` into `U.api` in
 Aether's `tail/updater.lua` and `N.api` in `tail/announcements.lua`.
