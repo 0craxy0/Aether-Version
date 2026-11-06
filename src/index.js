@@ -25,6 +25,19 @@ const MAX_BODY = 2048;
 
 export default {
 	async fetch(request, env) {
+		// An exception here surfaces as a 1101 with no detail: the client sees an
+		// opaque Cloudflare page, the update check falls back to the static file and
+		// the failure is invisible. Returning the reason keeps it diagnosable from a
+		// terminal, in the same JSON shape every other failure already uses.
+		try {
+			return await handle(request, env);
+		} catch (e) {
+			return json({ error: "worker exception", message: String((e && e.message) || e) }, 500);
+		}
+	},
+};
+
+async function handle(request, env) {
 		const now = Date.now();
 
 		// ── layer 0: shape. no bindings, no crypto ──
@@ -127,8 +140,7 @@ export default {
 			forced,
 			cooldown: 300,
 		});
-	},
-};
+}
 
 // Fails open on purpose: an update check that stops working strands every user on
 // an old build, which is worse than briefly losing the guard.
