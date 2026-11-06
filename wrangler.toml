@@ -18,3 +18,21 @@ new_sqlite_classes = ["Limiter"]
 
 # HMAC_SECRET is a secret, not a var:
 #   npx wrangler secret put HMAC_SECRET
+#
+# Announcements (GET /announcements, POST /announce) need a storage binding and a
+# publish token. Either backend works:
+#
+#   KV, no GitHub write access needed, publish is one write:
+#     npx wrangler kv namespace create ANNOUNCEMENTS
+#     then uncomment and paste the id:
+#   [[kv_namespaces]]
+#   binding = "ANNOUNCEMENTS"
+#   id = "<namespace id>"
+#
+#   GitHub, no new namespace, every publish is a commit:
+#     npx wrangler secret put GITHUB_TOKEN     # contents:write on the Aether repo
+#
+# With neither, GET still serves the committed announcements.json and POST
+# answers 501, so an unconfigured deploy is read-only rather than broken.
+#
+#   npx wrangler secret put PUBLISH_TOKEN      # the bearer token you publish with

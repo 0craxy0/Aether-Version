@@ -53,13 +53,19 @@ raising yours.
 npm install
 npx wrangler login
 npx wrangler secret put HMAC_SECRET     # any long random string
+
+# announcements, optional but recommended - see below
+npx wrangler kv namespace create ANNOUNCEMENTS   # paste the id into wrangler.toml
+npx wrangler secret put PUBLISH_TOKEN            # the bearer token you publish with
+
 npm run deploy
 ```
 
 Then put the printed `https://aether-version.<subdomain>.workers.dev` into `U.api` in
-Aether's `tail/updater.lua`.
+Aether's `tail/updater.lua` and `N.api` in `tail/announcements.lua`.
 
-`npm test` runs 47 assertions across the token, the puzzle and the full request flow.
+`npm test` runs 68 assertions across the token, the puzzle, the announcements
+endpoints and the full request flow.
 
 ## Request
 
@@ -103,6 +109,47 @@ Response:
 
 Bump `REV` in `main.lua` and `rev` in `version.json` **together**, or nobody is offered
 the next build.
+
+## Announcements
+
+A note the owner sends to everyone running the hub, without editing GitHub.
+
+```http
+GET /announcements          -> { "items": [{ "id": "...", "text": "...", "kind": "good" }] }
+
+POST /announce              Authorization: Bearer <PUBLISH_TOKEN>
+{ "text": "Double XP this weekend.", "kind": "good" }
+{ "items": [ ... ] }        replace the list
+{ "clear": true }           empty it
+```
+
+Publishing takes one request from anywhere:
+
+```bash
+curl -X POST https://aether-version.<subdomain>.workers.dev/announce \
+  -H "Authorization: Bearer $AETHER_PUBLISH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Double XP this weekend.","kind":"good"}'
+```
+
+Clients poll `GET /announcements` every 15 seconds, so a note is live without a
+commit. Storage is picked by which binding exists:
+
+| binding | publish does | needs |
+|---|---|---|
+| `ANNOUNCEMENTS` (KV) | one write, visible immediately | a namespace |
+| `GITHUB_TOKEN` | commits `announcements.json` | a token with `contents:write` |
+| neither | `501` on publish, GET still proxies the committed file | nothing |
+
+**Text only.** The payload carries no command, no target id and no action - a note
+cannot make a client do anything. That is why this half is public while the version
+gate needs a puzzle.
+
+`PUBLISH_TOKEN` is a secret and must never enter the Lua: it would be readable by
+anyone who opens the script, and then writable by them too. It is compared in
+constant time and publishes are throttled to one every three seconds per isolate.
+Text is capped at 220 characters, markup is stripped, and the list keeps the newest
+five.
 
 ## Notes
 

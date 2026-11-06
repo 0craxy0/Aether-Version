@@ -14,6 +14,7 @@
 import { LIMITS, clientIp } from "./limits.js";
 import { mintToken, verifyToken, sha256Hex } from "./token.js";
 import { makeChallenge, checkWork } from "./pow.js";
+import { handleAnnouncements, handlePublish } from "./announce.js";
 
 const REPO = "0craxy0/Aether";
 const BRANCH = "main";
@@ -27,6 +28,19 @@ export default {
 
 		// ── layer 0: shape. no bindings, no crypto ──
 		if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
+
+		// Announcements are a public read and a token-authenticated write, and they
+		// share this deployment so there is one origin to trust instead of two.
+		const path = new URL(request.url).pathname;
+		if (path === "/announcements") {
+			if (request.method !== "GET") return json({ error: "GET required" }, 405);
+			return handleAnnouncements(env);
+		}
+		if (path === "/announce") {
+			if (request.method !== "POST") return json({ error: "POST required" }, 405);
+			return handlePublish(request, env);
+		}
+
 		if (request.method !== "POST") return json({ error: "POST required" }, 405);
 		if (Number(request.headers.get("content-length") || 0) > MAX_BODY) {
 			return json({ error: "body too large" }, 413);
@@ -143,8 +157,8 @@ function hash(input) {
 function corsHeaders() {
 	return {
 		"access-control-allow-origin": "*",
-		"access-control-allow-methods": "POST, OPTIONS",
-		"access-control-allow-headers": "content-type",
+		"access-control-allow-methods": "GET, POST, OPTIONS",
+		"access-control-allow-headers": "content-type, authorization",
 	};
 }
 
