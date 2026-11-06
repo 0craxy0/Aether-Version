@@ -82,8 +82,12 @@ async function handle(request, env) {
 
 		// ── layer 3: identity ──
 		// A valid token means this IP has proven itself before and skips the puzzle.
+		// Without HMAC_SECRET there is nothing to sign with, so every caller pays the
+		// puzzle instead of the whole route throwing - an update check that 500s is
+		// worse than one that is merely more expensive.
 		const secret = env.HMAC_SECRET;
-		const trusted = typeof body.token === "string" && (await verifyToken(secret, body.token, ip, now));
+		const trusted = Boolean(secret) && typeof body.token === "string" &&
+			(await verifyToken(secret, body.token, ip, now));
 		if (!trusted) {
 			const solved = await checkWork(sha256Hex, String(body.seed ?? ""), Number(body.nonce), Number(body.bits));
 			const expected = makeChallenge(ip, now);
@@ -107,7 +111,7 @@ async function handle(request, env) {
 		const latest = Number(ver.rev) || 0;
 		if (!latest) return json({ error: "bad version.json" }, 500);
 
-		const token = await mintToken(secret, ip, now);
+		const token = secret ? await mintToken(secret, ip, now) : null;
 		const clientRev = Number(body.rev) || 0;
 
 		if (clientRev >= latest) {
